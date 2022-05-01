@@ -8,3 +8,7 @@ def test_api():
 
     api_container = typedoc.Reflection.from_json(api_json)
     api_container.save_as_python("python/")
+
+
+if __name__ == "__main__":
+    test_api()

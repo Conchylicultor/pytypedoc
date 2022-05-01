@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import dataclasses
-from email.policy import default
 import enum
-import functools
-from typing import Type
+from typing import Any
 
-from etils import edc
 from etils import epy
 from typedoc import types
 from typedoc import utils
+import types_parser
 
 
 class ReflectionKind(epy.StrEnum):
@@ -42,12 +39,12 @@ class ReflectionKind(epy.StrEnum):
     Reference = enum.auto()
     SetSignature = enum.auto()
     TypeAlias = enum.auto()
-    TypeLiteral = enum.auto()
+    TypeLiteral = "Type literal"
     TypeParameter = "Type parameter"
     Variable = enum.auto()
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class ReflectionFlags:
     hasExportAssignment: bool = False
     isAbstract: bool = False
@@ -64,7 +61,7 @@ class ReflectionFlags:
     from_json = utils.from_json
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class SourceReference:
     character: int
     fileName: str
@@ -75,14 +72,24 @@ class SourceReference:
     from_json = utils.from_json
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
+class Comment:
+    returns: str | None = None
+    shortText: str | None = None
+    tags: list[dict[str, str]] | None = None
+    text: str | None = None
+
+    from_json = utils.from_json
+
+
+@types_parser.make_dataclass
 class Reflection:
     id: int
     name: str
     kind: ReflectionKind
-    sources: list[SourceReference] = utils.field_list(SourceReference)
-    flags: ReflectionFlags = edc.field(validate=ReflectionFlags.from_json)
-    comment: str | None = None
+    sources: list[SourceReference] | None = None
+    flags: ReflectionFlags
+    comment: Comment | None = None
 
     @classmethod
     def from_json(cls, value) -> Reflection:
@@ -97,6 +104,7 @@ class Reflection:
             ReflectionKind.Class: DeclarationReflection,
             ReflectionKind.Function: DeclarationReflection,
             ReflectionKind.Method: DeclarationReflection,
+            ReflectionKind.TypeLiteral: DeclarationReflection,
             ReflectionKind.Constructor: DeclarationReflection,
             ReflectionKind.Property: DeclarationReflection,
             ReflectionKind.CallSignature: SignatureReflection,
@@ -107,77 +115,57 @@ class Reflection:
             ReflectionKind.TypeParameter: TypeParameterReflection,
         }
         cls = kind_to_cls.get(value["kind"], Reflection)
-        cls.update_init_kwargs(value)
 
         try:
             return cls(**value)
         except Exception as e:
-            print(e)
-            print()
-            print(f'{cls.__name__} ({value["kind"]}): {value["name"]}: {list(value)}')
-            raise
-
-    @classmethod
-    def update_init_kwargs(cls, value) -> None:
-        pass
+            msg = f'{cls.__name__} ({value["kind"]}): {value["name"]}: {list(value)}'
+            epy.reraise(e, prefix="\n" + msg + "\n")
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class ContainerReflection(Reflection):
-    children: list[Reflection] | None = utils.field_list(Reflection)
-
-    @classmethod
-    def update_init_kwargs(cls, value) -> None:
-        super().update_init_kwargs(value)
-        value.pop("categories", None)  # Groups can be dynamically computed
-        value.pop("groups", None)  # Groups can be dynamically computed
+    children: list[Reflection] | None = None
+    categories: Any = None  # Unused
+    groups: Any = None  # Unused
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class DeclarationReflection(ContainerReflection):
-    signatures: list[SignatureReflection] | None = utils.field_list(Reflection)
+    signatures: list[SignatureReflection] | None = None
     # Inheritance
-    extendedTypes: list[Type] = utils.field_list(types.Type)
+    extendedTypes: None | list[types.Type] = None
     # Pointer to overwritten method
-    overwrites: None | types.ReferenceType = edc.field(
-        validate=types.ReferenceType.from_json, default=None
-    )
+    overwrites: None | types.ReferenceType = None
     # Inherited function (not overwritten). Could be skipped
-    inheritedFrom: None | types.ReferenceType = edc.field(
-        validate=types.ReferenceType.from_json, default=None
-    )
-    type: types.Type = edc.field(validate=types.Type.from_json, default=None)
+    inheritedFrom: None | types.ReferenceType = None
+    type: None | types.Type = None
+    indexSignature: SignatureReflection | None = None
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class ReferenceReflection(DeclarationReflection):
     target: int
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class TypeParameterReflection(Reflection):
-    type: types.Type = edc.field(validate=types.Type.from_json, default=None)
+    type: types.Type = None
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class SignatureReflection(Reflection):
-    parameters: list[ParameterReflection] | None = utils.field_list(Reflection)
-    type: types.Type = edc.field(validate=types.Type.from_json)
-    overwrites: None | types.ReferenceType = edc.field(
-        validate=types.ReferenceType.from_json, default=None
-    )
-    inheritedFrom: None | types.ReferenceType = edc.field(
-        validate=types.ReferenceType.from_json, default=None
-    )
+    parameters: list[ParameterReflection] | None = None
+    type: types.Type
+    overwrites: None | types.ReferenceType = None
+    inheritedFrom: None | types.ReferenceType = None
     # Generic, like:
     # addEventListener<T extends E['type']>(type: T, listener: EventListener<E, T, this>): void;
-    typeParameter: list[TypeParameterReflection] = utils.field_list(
-        TypeParameterReflection
-    )
+    typeParameter: None | list[TypeParameterReflection] = None
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class ParameterReflection(Reflection):
-    type: types.Type = edc.field(validate=types.Type.from_json, default=None)
+    type: types.Type | None = None
     # Only used for Enum ?
-    defaultValue: int = edc.field(validate=int, default=-1)
+    defaultValue: str = ""

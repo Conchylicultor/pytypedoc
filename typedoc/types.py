@@ -4,13 +4,14 @@ import dataclasses
 import enum
 import functools
 
-from etils import edc
 from etils import epy
 
 from typedoc import utils
+from typedoc import reflections
+import types_parser
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class Type:
     type: str
 
@@ -27,22 +28,22 @@ class Type:
             raise
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class ArrayType(Type):
-    elementType: Type = edc.field(validate=Type.from_json)
+    elementType: Type
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class IntrinsicType(Type):
     name: str
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class LiteralType(Type):
     value: str | None | int | float | bool
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class ReferenceType(Type):
     """Reference can be.
 
@@ -52,27 +53,25 @@ class ReferenceType(Type):
 
     id: int | None = None
     name: str
-    qualifiedName: str = None
-    package: str = None
+    qualifiedName: str | None = None
+    package: str | None = None
     # Used
-    typeArguments: Type = utils.field_list(Type)
+    typeArguments: None | list[Type] = None
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class ReflectionType(Type):
     """Example: callback.
 
     onError: (message: string) => void
     """
 
-    declaration: str = None
+    declaration: reflections.DeclarationReflection | None = None
 
 
-@dataclasses.dataclass(kw_only=True)
+@types_parser.make_dataclass
 class UnionType(Type):
-    types: list[Type] = edc.field(
-        validate=lambda vals: [Type.from_json(v) for v in vals]
-    )
+    types: list[Type]
 
 
 TypeKindMap = {
