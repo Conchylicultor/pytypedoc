@@ -32,27 +32,55 @@ Mocking the raise statement ?
 
 from typing import Type
 
-# TODO(epot): Slots
+
+import builtins
+import functools
 
 
-class MyException0(Exception):
-    pass
-    # def __init__(self, a):
-    #     pass
+class A:
+    x = 1
+    y = 2
 
 
-def fn():
-    raise ImportError(123, 567, path="asdsa")
+# err =
+# err.args = (f'ddd{err}',)
+# # print('>>', str(err), repr(err))
+# raise err
+
+
+@functools.lru_cache(None)
+def _all_builtin_exc_cls() -> set[Exception]:
+    # Note: We do not support BaseException on purpose
+    # TODO(py311): Support ExceptionGroup
+    all_exc_cls = []
+    for v in dir(builtins):
+        if not (v.endswith("Error") or v == "Exception"):
+            continue
+        exc_cls = getattr(builtins, v)
+        assert isinstance(exc_cls, type) and issubclass(exc_cls, Exception)
+        all_exc_cls.append(exc_cls)
+    return set(all_exc_cls)
 
 
 def reraise(e):
+    msg = f"<<<{e}>>>"
+
+    exc_cls = type(e)
+
+    # 1st case: builtins
+    print(exc_cls)
+    print(_all_builtin_exc_cls())
+    if exc_cls in _all_builtin_exc_cls():
+        exc_cls.args = (msg,)
+        raise
+
+    # 2nd case: User-defined exception
     class MyException(type(e)):
         def __str__(self):
-            return "Additional message"
+            return msg
 
-    # e.__str__ = lambda x: 'asdas'
-    print(list(e.__dict__))
-    print(dir(e))
+    # print(list(e.__dict__))
+    # print(dir(e))
     try:
         e.__class__ = MyException
     except TypeError:
@@ -60,30 +88,37 @@ def reraise(e):
     else:
         raise
 
-    if type(e).__str__ == Exception.__str__:
-        e.args = (f"Additional message: {str(e)}",)
-        raise
-
-    print(type(e).__str__)
-    print(Exception.__str__)
-    raise ValueError(
-        "Unexpected exception",
-    )
+    # 3rd case: Unsuported exception
+    # Not sure if there is actually a use-case. Maybe for C++
+    # defined exceptions.
+    raise NotImplementedError("Unsuported")
 
 
-import builtins
+class MyException0(Exception):
+    pass
 
-ers = [v for v in dir(builtins) if v.endswith(("Error", "Exception"))]
-# print("\n".join(ers))
 
-print("*****")
-for e in ers:
-    if getattr(builtins, e).__str__ != Exception.__str__:
-        print(e, "<<")
-    else:
-        print(e)
+class MyException1(Exception):
+    __slots__ = ()
+    # def __init__(self, a):
+    #     pass
 
-# try:
-#     fn()
-# except Exception as e:
-#     reraise(e)
+
+exc_to_try = [
+    MyException0,
+    MyException1,
+    ValueError,
+    ValueError("asdasd"),
+    ValueError("asdasd", "rtyrt"),
+    AttributeError("asdas", name="y2", obj=A),
+    ImportError(123, 567, path="asdsa"),
+]
+
+for exc in exc_to_try:
+    try:
+        try:
+            raise exc
+        except Exception as e:
+            reraise(e)
+    except Exception as e:
+        print(repr(e), str(e))
